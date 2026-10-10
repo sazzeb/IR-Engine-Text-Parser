@@ -1,0 +1,7 @@
+cat	1
+delta	2
+echo	3
+foxtrot	4
+hotel	5
+lima	6
+run	7

@@ -1,0 +1,16 @@
+TERM_DICTIONARY
+cat	1
+delta	2
+echo	3
+foxtrot	4
+hotel	5
+lima	6
+run	7
+
+DOCUMENT_DICTIONARY
+FT911-1	1
+FT911-3546	3546
+
+TOKEN_STREAMS
+FT911-3546	3546	echo:3 delta:2 lima:6 foxtrot:4 hotel:5 cat:1 cat:1
+FT911-1	1	run:7

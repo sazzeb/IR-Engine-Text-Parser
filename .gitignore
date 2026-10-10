@@ -1,0 +1,20 @@
+# CLion and CMake
+cmake-build-*/
+build-vscode/
+build/
+out/
+
+# IDE settings
+.idea/
+.vscode/
+
+# macOS files
+.DS_Store
+.AppleDouble
+
+# Temporary files
+*.log
+*.tmp
+
+# Project archives
+Current_CLion_Project.zip
