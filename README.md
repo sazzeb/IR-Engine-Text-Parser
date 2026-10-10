@@ -23,6 +23,8 @@ Both use `resources/stoplist.txt` to remove stopwords. The stoplist is a filteri
 
 Adding `--self-test` to `ParserTests` runs automated checks instead of processing the bundled corpus.
 
+Follow the instructions to run the projects
+
 ## Supported systems
 
 | Editor | Windows | macOS | Linux |
