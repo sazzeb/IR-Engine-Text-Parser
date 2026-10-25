@@ -4,6 +4,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
+#include <vector>
 
 namespace ir {
 
@@ -87,7 +88,8 @@ OutputPaths OutputWriter::paths(
 // Replace all result files together and clear partial results after failures.
 void OutputWriter::publish(
     const std::filesystem::path& parserOutput,
-    const Producer& producer) {
+    const Producer& producer,
+    bool includeIndexes) {
     namespace fs = std::filesystem;
 
     const auto output = paths(parserOutput);
@@ -97,10 +99,13 @@ void OutputWriter::publish(
 
     fs::create_directories(parent);
 
-    const std::array<fs::path, 6> destinations{
+    const std::array<fs::path, 6> allDestinations{
         output.parser, output.terms, output.documents,
         output.forward, output.inverted, output.offsets
     };
+    const std::vector<fs::path> destinations(
+        allDestinations.begin(),
+        allDestinations.begin() + (includeIndexes ? 6 : 3));
 
     for (std::size_t index = 0; index < destinations.size(); ++index) {
         const auto& path = destinations[index];
@@ -124,10 +129,13 @@ void OutputWriter::publish(
     OutputWorkspace workspace(parent);
     const auto staged = paths(workspace.path / "parser_output.txt");
 
-    const std::array<fs::path, 6> pending{
+    const std::array<fs::path, 6> allPending{
         staged.parser, staged.terms, staged.documents,
         staged.forward, staged.inverted, staged.offsets
     };
+    const std::vector<fs::path> pending(
+        allPending.begin(),
+        allPending.begin() + (includeIndexes ? 6 : 3));
 
     try {
         for (const auto& path : destinations) {
@@ -146,6 +154,11 @@ void OutputWriter::publish(
         for (std::size_t index = 0; index < destinations.size(); ++index) {
             fs::remove(destinations[index]);
             fs::rename(pending[index], destinations[index]);
+        }
+        if (!includeIndexes) {
+            for (std::size_t index = 3; index < allDestinations.size(); ++index) {
+                fs::remove(allDestinations[index]);
+            }
         }
     } catch (...) {
         for (const auto& path : destinations) {

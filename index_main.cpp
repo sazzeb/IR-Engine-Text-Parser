@@ -1,10 +1,9 @@
-#include "IndexLookup.h"
+#include "IndexSession.h"
 #include "ParserApplication.h"
 
 #include <chrono>
 #include <exception>
 #include <filesystem>
-#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
@@ -25,6 +24,7 @@ std::string argumentValue(int& index, int argc, char* argv[]) {
 int main(int argc, char* argv[]) {
     try {
         ir::RunOptions options;
+        options.input = "resources/ft911";
         options.traceAll = false;
         std::optional<std::string> query;
         bool lookupOnly = false;
@@ -39,6 +39,7 @@ int main(int argc, char* argv[]) {
                        "[--lookup-only]\n"
                     << "Builds forward and inverted indexes, then looks up terms.\n"
                     << "Paths are relative to the working directory.\n"
+                    << "Default input: resources/ft911. Default output: output.\n"
                     << "--lookup-only searches existing output without indexing again.\n"
                     << "Without --term, enter one term per line; Ctrl-D ends lookup.\n";
                 return 0;
@@ -70,43 +71,11 @@ int main(int argc, char* argv[]) {
             const auto elapsed = std::chrono::duration<double>(
                 std::chrono::steady_clock::now() - started).count();
 
-            const auto indexBytes =
-                std::filesystem::file_size(paths.forward) +
-                std::filesystem::file_size(paths.inverted) +
-                std::filesystem::file_size(paths.offsets);
-            const auto totalBytes = indexBytes +
-                std::filesystem::file_size(paths.terms) +
-                std::filesystem::file_size(paths.documents);
-
-            std::cout << std::fixed << std::setprecision(3)
-                      << "[INDEX] " << summary.documents << " documents; "
-                      << summary.terms << " terms; " << summary.tokens << " tokens; "
-                      << elapsed << " seconds\n"
-                      << "[SIZE] " << indexBytes << " index bytes; "
-                      << totalBytes << " bytes including dictionaries\n";
+            ir::printIndexSummary(summary, paths, elapsed, std::cout);
         }
 
-        ir::IndexLookup lookup(paths, options.stopwords);
-
-        if (query) {
-            lookup.printTerm(*query, std::cout);
-            return 0;
-        }
-
-        std::string term;
-
-        while (std::cout << "Enter a term (Ctrl-D to finish): " &&
-               std::getline(std::cin, term)) {
-            if (term.empty()) {
-                continue;
-            }
-
-            try {
-                lookup.printTerm(term, std::cout);
-            } catch (const std::invalid_argument& error) {
-                std::cout << error.what() << '\n';
-            }
-        }
+        ir::runTermLookup(
+            paths, options.stopwords, query, std::cin, std::cout);
 
         return 0;
     } catch (const std::exception& error) {

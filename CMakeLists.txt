@@ -64,6 +64,7 @@ find_program_source(input_source input_main.cpp)
 find_program_source(parser_tests_source parser_tests.cpp)
 find_program_source(application_tests_source application_tests.cpp)
 find_program_source(index_source index_main.cpp)
+find_program_source(index_upload_source index_upload_main.cpp)
 
 # Download the existing dependencies and the graphical file chooser header.
 FetchContent_Declare(json
@@ -121,6 +122,7 @@ add_library(ir_core STATIC
         src/ParserApplication.cpp
         src/IndexBuilder.cpp
         src/IndexLookup.cpp
+        src/IndexSession.cpp
         src/StreamingWorkbook.cpp)
 
 target_include_directories(ir_core PUBLIC src)
@@ -199,7 +201,10 @@ add_executable(ApplicationTests
 add_executable(IndexEngine
         "${index_source}")
 
-foreach(target IREngine InputParser ParserTests ApplicationTests IndexEngine)
+add_executable(IndexUploader
+        "${index_upload_source}")
+
+foreach(target IREngine InputParser ParserTests ApplicationTests IndexEngine IndexUploader)
     target_link_libraries(${target} PRIVATE ir_core)
 
     set_target_properties(${target} PROPERTIES

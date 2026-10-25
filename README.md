@@ -16,7 +16,7 @@ The `.cpp` files contain source code. CMake builds them into the executable prog
 | `parser_tests.cpp` | `ParserTests` | Processes the same bundled corpus |
 | `input_main.cpp` | `InputParser` | Opens a graphical chooser for a data file |
 | `application_tests.cpp` | `ApplicationTests` | Opens a graphical chooser for a data file |
-| `index_main.cpp` | `IndexEngine` | Builds indexes and looks up terms |
+| `index_main.cpp` | `IndexEngine` | Indexes `resources/ft911` and looks up terms |
 
 **Start by running `IREngine` or `ParserTests` with no program arguments.**
 

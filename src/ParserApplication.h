@@ -5,12 +5,14 @@
 #include <cstddef>
 #include <filesystem>
 #include <ostream>
+#include <vector>
 
 namespace ir {
 
     // Keep runtime paths relative to the folder used to launch the program.
     struct RunOptions {
         std::filesystem::path input = "./resources/corpus";
+        std::vector<std::filesystem::path> additionalInputs;
         std::filesystem::path stopwords = "./resources/stoplist.txt";
         std::filesystem::path output = "./output/parser_output.txt";
 
@@ -31,10 +33,16 @@ namespace ir {
     // Process corpus files using sorted term identifiers and validated document numbers.
     RunSummary runParser(const RunOptions& options, std::ostream& log);
 
+    // Parse exactly one file without generating forward or inverted indexes.
+    RunSummary runTextParser(const RunOptions& options, std::ostream& log);
+
     // Read the bundled corpus and stoplist automatically without opening file dialogs.
     RunSummary runDefaultResource(std::ostream& log);
 
-    // Select one file graphically and convert its path before opening data.
+    // Select one file graphically and run the text parser only.
     int runInteractiveParser(int argc, char* argv[]);
+
+    // Select Phase 2 files or a folder, then index and retrieve terms.
+    int runInteractiveIndexer(int argc, char* argv[]);
 
 }

@@ -1,5 +1,6 @@
 #include "ParserApplication.h"
 #include "IndexBuilder.h"
+#include "IndexSession.h"
 #include "Dictionary.h"
 #include "OutputWriter.h"
 #include "Sqlite.h"
@@ -8,12 +9,14 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <commdlg.h>
-#else
-#include <portable-file-dialogs.h>
 #endif
 
+#include <portable-file-dialogs.h>
+
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
+#include <cwchar>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -123,11 +126,11 @@ std::vector<std::filesystem::path> inputFiles(
         }
     };
 
-    if (fs::is_regular_file(source)) {
-        add(source, true);
-    } else if (fs::is_directory(source)) {
-        if (options.recursive) {
-            for (fs::recursive_directory_iterator entry(source), end;
+    const auto collect = [&](const fs::path& input) {
+        if (fs::is_regular_file(input)) {
+            add(input, true);
+        } else if (fs::is_directory(input) && options.recursive) {
+            for (fs::recursive_directory_iterator entry(input), end;
                  entry != end; ++entry) {
                 const auto name = entry->path().filename().string();
 
@@ -138,18 +141,22 @@ std::vector<std::filesystem::path> inputFiles(
 
                 add(entry->path(), false);
             }
-        } else {
-            for (const auto& entry : fs::directory_iterator(source)) {
+        } else if (fs::is_directory(input)) {
+            for (const auto& entry : fs::directory_iterator(input)) {
                 const auto name = entry.path().filename().string();
 
                 if (!name.empty() && name.front() != '.') {
                     add(entry.path(), false);
                 }
             }
+        } else {
+            throw std::runtime_error("Input is missing: " + input.u8string());
         }
-    } else {
-        throw std::runtime_error(
-            "Input is missing. Start from the project root or configured build folder.");
+    };
+
+    collect(source);
+    for (const auto& input : options.additionalInputs) {
+        collect(requireRelativePath(input));
     }
 
     std::sort(files.begin(), files.end());
@@ -245,98 +252,140 @@ void writeDictionary(
     }
 }
 
-// Choose a local file and return a relative path without console prompts.
-std::optional<std::filesystem::path> chooseRelativeFile() {
-    std::filesystem::path selectedPath;
-
-#ifdef _WIN32
-    std::vector<wchar_t> filename(65536, L'\0');
-
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = GetActiveWindow();
-    dialog.lpstrTitle = L"Select a corpus file";
-    dialog.lpstrFilter =
-        L"Corpus files\0"
-        L"*.txt;*.trec;*.sgm;*.sgml;*.csv;*.tsv;*.json;*.jsonl;*.ndjson;*.xlsx\0"
-        L"All files\0*.*\0";
-    dialog.nFilterIndex = 1;
-    dialog.lpstrFile = filename.data();
-    dialog.nMaxFile = static_cast<DWORD>(filename.size());
-    dialog.Flags =
-        OFN_EXPLORER |
-        OFN_FILEMUSTEXIST |
-        OFN_PATHMUSTEXIST |
-        OFN_NOCHANGEDIR;
-
-    if (!GetOpenFileNameW(&dialog)) {
-        const DWORD error = CommDlgExtendedError();
-
-        if (error != 0) {
-            throw std::runtime_error(
-                "Windows file chooser failed: " +
-                std::to_string(error));
-        }
-
-        return std::nullopt;
-    }
-
-    selectedPath = std::filesystem::path(filename.data());
-#else
+// Choose a local corpus file or folder and return a relative path.
+std::optional<std::vector<std::filesystem::path>> chooseRelativeInput(bool indexer) {
 #ifdef __linux__
     const char* display = std::getenv("DISPLAY");
     const char* wayland = std::getenv("WAYLAND_DISPLAY");
 
     if ((!display || !*display) && (!wayland || !*wayland)) {
         throw std::runtime_error(
-            "Run inside a graphical Linux desktop to select a file.");
+            "Run inside a graphical Linux desktop to select input.");
     }
 #endif
 
+#ifndef _WIN32
     if (!DialogSupport().available()) {
         throw std::runtime_error(
             "No graphical file chooser is available. On Linux, install Zenity or KDialog.");
     }
+#endif
 
-    pfd::open_file chooser(
-        "Select a corpus file",
-        "",
-        {
-            "Corpus files",
-            "*.txt *.trec *.sgm *.sgml *.csv *.tsv *.json *.jsonl *.ndjson *.xlsx",
-            "All files",
-            "*"
-        });
+    const auto selection = indexer ? pfd::message(
+        "Select corpus input",
+        "Choose Yes for a folder, No for files, or Cancel to keep existing results.",
+        pfd::choice::yes_no_cancel,
+        pfd::icon::question).result() : pfd::button::no;
 
-    const auto selected = chooser.result();
-
-    if (selected.empty()) {
+    if (selection != pfd::button::yes &&
+        selection != pfd::button::no) {
         return std::nullopt;
     }
 
-    if (selected.size() != 1) {
-        throw std::runtime_error("Select exactly one corpus file.");
-    }
+    const bool selectFolder = selection == pfd::button::yes;
+    std::vector<std::filesystem::path> selectedPaths;
 
-    selectedPath = std::filesystem::u8path(selected.front());
+    if (selectFolder) {
+        const auto selected = pfd::select_folder(
+            "Select a corpus folder").result();
+
+        if (selected.empty()) {
+            return std::nullopt;
+        }
+
+        selectedPaths.push_back(std::filesystem::u8path(selected));
+    } else {
+#ifdef _WIN32
+        std::vector<wchar_t> filename(65536, L'\0');
+
+        OPENFILENAMEW dialog{};
+        dialog.lStructSize = sizeof(dialog);
+        dialog.hwndOwner = GetActiveWindow();
+        dialog.lpstrTitle = L"Select a corpus file";
+        dialog.lpstrFilter =
+            L"Corpus files\0"
+            L"*.txt;*.trec;*.sgm;*.sgml;*.csv;*.tsv;*.json;*.jsonl;*.ndjson;*.xlsx\0"
+            L"All files\0*.*\0";
+        dialog.nFilterIndex = 1;
+        dialog.lpstrFile = filename.data();
+        dialog.nMaxFile = static_cast<DWORD>(filename.size());
+        dialog.Flags =
+            OFN_EXPLORER |
+            OFN_FILEMUSTEXIST |
+            OFN_PATHMUSTEXIST |
+            OFN_NOCHANGEDIR |
+            (indexer ? OFN_ALLOWMULTISELECT : 0);
+
+        if (!GetOpenFileNameW(&dialog)) {
+            const DWORD error = CommDlgExtendedError();
+
+            if (error != 0) {
+                throw std::runtime_error(
+                    "Windows file chooser failed: " +
+                    std::to_string(error));
+            }
+
+            return std::nullopt;
+        }
+
+        const std::filesystem::path first(filename.data());
+        const wchar_t* next = filename.data() + first.native().size() + 1;
+        if (indexer && *next != L'\0') {
+            while (*next != L'\0') {
+                selectedPaths.push_back(first / next);
+                next += std::wcslen(next) + 1;
+            }
+        } else {
+            selectedPaths.push_back(first);
+        }
+#else
+        pfd::open_file chooser(
+            "Select a corpus file",
+            "",
+            {
+                "Corpus files",
+                "*.txt *.trec *.sgm *.sgml *.csv *.tsv *.json *.jsonl *.ndjson *.xlsx",
+                "All files",
+                "*"
+            }, indexer ? pfd::opt::multiselect : pfd::opt::none);
+
+        const auto selected = chooser.result();
+
+        if (selected.empty()) {
+            return std::nullopt;
+        }
+
+        if (!indexer && selected.size() != 1) {
+            throw std::runtime_error("Select exactly one corpus file.");
+        }
+
+        for (const auto& path : selected) {
+            selectedPaths.push_back(std::filesystem::u8path(path));
+        }
 #endif
+    }
 
     // Desktop APIs return full locations, so convert them before opening files.
-    std::error_code error;
-    const auto relative = std::filesystem::relative(selectedPath, error);
+    std::vector<std::filesystem::path> relativePaths;
+    for (const auto& selectedPath : selectedPaths) {
+        std::error_code error;
+        const auto relative = std::filesystem::relative(selectedPath, error);
 
-    if (error || relative.empty() || relative.has_root_path()) {
-        throw std::runtime_error(
-            "Copy the input onto the project's drive so a relative path can be used.");
+        if (error || relative.empty() || relative.has_root_path()) {
+            throw std::runtime_error(
+                "Copy the input onto the project's drive so a relative path can be used.");
+        }
+
+        const auto path = requireRelativePath(relative);
+        if (selectFolder
+                ? !std::filesystem::is_directory(path)
+                : !std::filesystem::is_regular_file(path)) {
+            throw std::runtime_error("Select readable corpus input.");
+        }
+        relativePaths.push_back(path);
     }
 
-    const auto path = requireRelativePath(relative);
-
-    if (!std::filesystem::is_regular_file(path)) {
-        throw std::runtime_error("Select a readable regular file.");
-    }
-
-    return path;
+    return relativePaths;
 }
 
 // Read a setting value without asking users to type input file paths.
@@ -355,7 +404,8 @@ std::string settingValue(int& index, int argc, char* argv[]) {
 RunSummary processCorpus(
     const RunOptions& options,
     std::ostream& log,
-    bool useUploadLayout) {
+    bool useUploadLayout,
+    bool buildIndexes = true) {
     const auto outputs = OutputWriter::paths(options.output);
     const auto files = inputFiles(options, outputs);
 
@@ -563,7 +613,10 @@ RunSummary processCorpus(
                 database,
                 "SELECT id FROM term_ids WHERE value=?1");
 
-            IndexBuilder index(database);
+            std::optional<IndexBuilder> index;
+            if (buildIndexes) {
+                index.emplace(database);
+            }
 
             std::unordered_map<std::string, std::int64_t> identifiers;
             std::ifstream tokens(scratch / "tokens.txt", std::ios::binary);
@@ -646,7 +699,9 @@ RunSummary processCorpus(
                 }
 
                 output << '\n';
-                index.addDocument(id, frequencies);
+                if (index) {
+                    index->addDocument(id, frequencies);
+                }
 
                 if (options.verbose && options.traceAll) {
                     log << '\n';
@@ -658,20 +713,24 @@ RunSummary processCorpus(
                     "Reading tokens or writing the console failed.");
             }
 
-            index.write(staged);
+            if (index) {
+                index->write(staged);
+            }
 
             closeOutput(output);
-        });
+        }, buildIndexes);
 
     log << "[DONE] " << summary.documents << " documents; "
         << summary.terms << " terms; "
         << summary.tokens << " tokens\n"
         << "Saved: " << outputs.parser.generic_u8string() << '\n'
         << outputs.terms.generic_u8string() << '\n'
-        << outputs.documents.generic_u8string() << '\n'
-        << outputs.forward.generic_u8string() << '\n'
-        << outputs.inverted.generic_u8string() << '\n'
-        << outputs.offsets.generic_u8string() << '\n';
+        << outputs.documents.generic_u8string() << '\n';
+    if (buildIndexes) {
+        log << outputs.forward.generic_u8string() << '\n'
+            << outputs.inverted.generic_u8string() << '\n'
+            << outputs.offsets.generic_u8string() << '\n';
+    }
 
     return summary;
 }
@@ -683,24 +742,39 @@ RunSummary runParser(const RunOptions& options, std::ostream& log) {
     return processCorpus(options, log, false);
 }
 
+RunSummary runTextParser(const RunOptions& options, std::ostream& log) {
+    if (!options.additionalInputs.empty() ||
+        !std::filesystem::is_regular_file(options.input)) {
+        throw std::invalid_argument("InputParser requires one regular file.");
+    }
+    return processCorpus(options, log, true, false);
+}
+
 // Apply the full preprocessing rules to bundled corpus files without file dialogs.
 RunSummary runDefaultResource(std::ostream& log) {
     RunOptions options;
     return runParser(options, log);
 }
 
-// Open native file selection and process only relative paths after selection.
-int runInteractiveParser(int argc, char* argv[]) {
+// Select a corpus graphically, build its indexes, and look up terms.
+int runInteractiveApplication(int argc, char* argv[], bool indexer) {
     try {
         RunOptions options;
+        options.traceAll = false;
+        std::optional<std::string> query;
 
         for (int index = 1; index < argc; ++index) {
             const std::string option = argv[index];
 
             if (option == "--help") {
                 std::cout
-                    << "Select a file using the graphical chooser. No console paths are accepted.\n"
+                    << (indexer
+                        ? "Select files or a folder for Phase 2 indexing and lookup.\n"
+                        : "Select one file for text parsing only.\n")
                     << "--trace | --progress\n"
+                    << (indexer ? "--recursive\n--term WORD\n" : "")
+                    << "--output DIRECTORY\n"
+                    << "--stopwords FILE\n"
                     << "--format auto|trec|txt|csv|tsv|json|jsonl|xlsx\n"
                     << "--text-mode paragraphs|lines|document\n"
                     << "--text-field NAME (repeatable)\n"
@@ -711,6 +785,7 @@ int runInteractiveParser(int argc, char* argv[]) {
                     << "Headerless column numbers start at 1. Cancel keeps existing results.\n"
                     << "Unnamed records use DOC#1, DOC#2, and so on in input order.\n"
                     << "Plain text uses one document per paragraph unless --text-mode changes it.\n"
+                    << (indexer ? "After indexing, enter terms to inspect their inverted postings.\n" : "No indexes or lookup are produced.\n")
                     << "Existing document names stay unchanged; FT911-X keeps document ID X.\n";
 
                 return 0;
@@ -720,6 +795,21 @@ int runInteractiveParser(int argc, char* argv[]) {
                 options.traceAll = true;
             } else if (option == "--progress") {
                 options.traceAll = false;
+            } else if (option == "--recursive") {
+                if (!indexer) {
+                    throw std::invalid_argument("--recursive is only for the Phase 2 indexer.");
+                }
+                options.recursive = true;
+            } else if (option == "--term") {
+                if (!indexer) {
+                    throw std::invalid_argument("--term is only for the Phase 2 indexer.");
+                }
+                query = settingValue(index, argc, argv);
+            } else if (option == "--output") {
+                options.output = std::filesystem::path(
+                    settingValue(index, argc, argv)) / "parser_output.txt";
+            } else if (option == "--stopwords") {
+                options.stopwords = settingValue(index, argc, argv);
             } else if (option == "--format") {
                 options.reader.format = settingValue(index, argc, argv);
             } else if (option == "--text-mode") {
@@ -741,7 +831,7 @@ int runInteractiveParser(int argc, char* argv[]) {
             }
         }
 
-        const auto selected = chooseRelativeFile();
+        const auto selected = chooseRelativeInput(indexer);
 
         if (!selected) {
             std::cout
@@ -749,13 +839,36 @@ int runInteractiveParser(int argc, char* argv[]) {
             return 0;
         }
 
-        options.input = *selected;
-        processCorpus(options, std::cout, true);
+        options.input = selected->front();
+        options.additionalInputs.assign(selected->begin() + 1, selected->end());
+        const bool selectedFolder = std::filesystem::is_directory(options.input);
+        options.recursive = options.recursive || selectedFolder;
+
+        const auto started = std::chrono::steady_clock::now();
+        const auto summary = indexer
+            ? runParser(options, std::cout)
+            : runTextParser(options, std::cout);
+        const auto elapsed = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - started).count();
+        const auto paths = OutputWriter::paths(options.output);
+
+        if (indexer) {
+            printIndexSummary(summary, paths, elapsed, std::cout);
+            runTermLookup(paths, options.stopwords, query, std::cin, std::cout);
+        }
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "Error: " << error.what() << '\n';
         return 1;
     }
+}
+
+int runInteractiveParser(int argc, char* argv[]) {
+    return runInteractiveApplication(argc, argv, false);
+}
+
+int runInteractiveIndexer(int argc, char* argv[]) {
+    return runInteractiveApplication(argc, argv, true);
 }
 
 }

@@ -28,18 +28,17 @@ frequency. Without --term, it prompts for one term at a time. Press Ctrl-D
 
 Index the supplied collection
 -----------------------------
-Keep the full collection in its own folder so the bundled sample is not
-indexed twice. Pass its relative file or folder path with --input. For a
-folder containing nested files, add --recursive:
+The full FT911 collection is in resources/ft911. From the project root,
+IndexEngine needs no input arguments to index it and prompt for a term:
 
-  ./build/IndexEngine --input resources/full_corpus --recursive --output output
+  ./build/IndexEngine
 
-For this workspace, the full FT911 collection is in Downloads/proj1/ft911.
-From the project root, the equivalent command is:
+The default input is resources/ft911. The default output folder is output.
+Use --input to select a different file or folder. Add --recursive if that
+folder contains nested input files:
 
-  ./build/IndexEngine --input ../../Downloads/proj1/ft911 --output output
+  ./build/IndexEngine --input resources/other_corpus --recursive --output output
 
-The default input is resources/corpus. The default output folder is output.
 The default stopword list is resources/stoplist.txt. To use a different file:
 
   ./build/IndexEngine --input resources/corpus/data.trec --stopwords resources/stoplist.txt --output output

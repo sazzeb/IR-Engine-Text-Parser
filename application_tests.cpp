@@ -1,6 +1,7 @@
 #include "ParserApplication.h"
 #include "OutputWriter.h"
 #include "IndexLookup.h"
+#include "IndexSession.h"
 
 #include <miniz.h>
 
@@ -411,6 +412,66 @@ void runSelfTests() {
         postings.str() ==
             "Term: cat (ID 1)\nDocument 1: 2\nDocument 2: 1\n",
         "Lookup omitted a document from a posting list.");
+
+    const auto folder = temporary.path / "corpus";
+    std::filesystem::create_directories(folder / "nested");
+    writeFile(
+        folder / "first.trec",
+        "<DOC><DOCNO>A</DOCNO><TEXT>cat cat</TEXT></DOC>");
+    writeFile(
+        folder / "nested" / "second.trec",
+        "<DOC><DOCNO>B</DOCNO><TEXT>cat dog</TEXT></DOC>");
+
+    options.input = folder;
+    options.recursive = true;
+    ir::runParser(options, log);
+
+    require(
+        readFile(outputs.forward) ==
+            "1: 1: 2;\n2: 1: 1; 2: 1;\n" &&
+        readFile(outputs.inverted) ==
+            "1: 1: 2; 2: 1;\n2: 2: 1;\n",
+        "Folder input did not index all selected documents.");
+
+    options.input = folder / "first.trec";
+    options.additionalInputs = {folder / "nested" / "second.trec"};
+    options.recursive = false;
+    require(
+        ir::runParser(options, log).documents == 2 &&
+        readFile(outputs.inverted) ==
+            "1: 1: 2; 2: 1;\n2: 2: 1;\n",
+        "Multiple selected files were not indexed together.");
+    options.additionalInputs.clear();
+
+    require(
+        ir::runTextParser(options, log).documents == 1 &&
+        readFile(outputs.parser).find("TOKEN_STREAMS") != std::string::npos &&
+        !std::filesystem::exists(outputs.forward) &&
+        !std::filesystem::exists(outputs.inverted) &&
+        !std::filesystem::exists(outputs.offsets),
+        "InputParser generated indexes instead of only text parser results.");
+    ir::runParser(options, log);
+
+    options.input = folder;
+    requireFailure(
+        [&] { ir::runTextParser(options, log); },
+        "InputParser accepted a folder instead of one file.");
+    options.recursive = true;
+    ir::runParser(options, log);
+
+    std::istringstream queries("cats\ndog\n");
+    std::ostringstream lookupOutput;
+    ir::runTermLookup(
+        outputs, options.stopwords, std::nullopt, queries, lookupOutput);
+
+    require(
+        lookupOutput.str().find("Document 1: 2\nDocument 2: 1\n") !=
+            std::string::npos &&
+        lookupOutput.str().find("Term: dog (ID 2)\nDocument 2: 1\n") !=
+            std::string::npos,
+        "Interactive lookup did not use the folder's inverted index.");
+
+    options.recursive = false;
 
     // Clear staged failures without publishing any incomplete dictionary or token file.
     requireFailure(

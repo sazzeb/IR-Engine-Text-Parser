@@ -34,7 +34,8 @@ namespace ir {
         // Clear previous results and publish new files only after production succeeds.
         static void publish(
             const std::filesystem::path& parserOutput,
-            const Producer& producer);
+            const Producer& producer,
+            bool includeIndexes = true);
 
         // Write finalized dictionaries and token streams using their final identifiers.
         void write(
