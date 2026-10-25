@@ -1,4 +1,5 @@
 #include "ParserApplication.h"
+#include "IndexBuilder.h"
 #include "Dictionary.h"
 #include "OutputWriter.h"
 #include "Sqlite.h"
@@ -62,7 +63,8 @@ std::vector<std::filesystem::path> inputFiles(
     const auto stopwords = requireRelativePath(options.stopwords);
 
     const std::vector<fs::path> results{
-        outputs.parser, outputs.terms, outputs.documents
+        outputs.parser, outputs.terms, outputs.documents,
+        outputs.forward, outputs.inverted, outputs.offsets
     };
 
     for (const auto& path : results) {
@@ -561,6 +563,8 @@ RunSummary processCorpus(
                 database,
                 "SELECT id FROM term_ids WHERE value=?1");
 
+            IndexBuilder index(database);
+
             std::unordered_map<std::string, std::int64_t> identifiers;
             std::ifstream tokens(scratch / "tokens.txt", std::ios::binary);
 
@@ -600,6 +604,7 @@ RunSummary processCorpus(
                 std::istringstream words(line.substr(separator + 1));
                 std::string word;
                 bool first = true;
+                std::unordered_map<std::int64_t, std::int64_t> frequencies;
 
                 while (words >> word) {
                     auto found = identifiers.find(word);
@@ -624,6 +629,14 @@ RunSummary processCorpus(
                     output << (first ? "" : " ")
                            << word << ':' << found->second;
 
+                    auto& frequency = frequencies[found->second];
+
+                    if (frequency == std::numeric_limits<std::int64_t>::max()) {
+                        throw std::overflow_error("Document term frequency exceeds its limit.");
+                    }
+
+                    ++frequency;
+
                     if (options.verbose && options.traceAll) {
                         log << (first ? "" : " ")
                             << word << ':' << found->second;
@@ -633,6 +646,7 @@ RunSummary processCorpus(
                 }
 
                 output << '\n';
+                index.addDocument(id, frequencies);
 
                 if (options.verbose && options.traceAll) {
                     log << '\n';
@@ -644,6 +658,8 @@ RunSummary processCorpus(
                     "Reading tokens or writing the console failed.");
             }
 
+            index.write(staged);
+
             closeOutput(output);
         });
 
@@ -652,7 +668,10 @@ RunSummary processCorpus(
         << summary.tokens << " tokens\n"
         << "Saved: " << outputs.parser.generic_u8string() << '\n'
         << outputs.terms.generic_u8string() << '\n'
-        << outputs.documents.generic_u8string() << '\n';
+        << outputs.documents.generic_u8string() << '\n'
+        << outputs.forward.generic_u8string() << '\n'
+        << outputs.inverted.generic_u8string() << '\n'
+        << outputs.offsets.generic_u8string() << '\n';
 
     return summary;
 }

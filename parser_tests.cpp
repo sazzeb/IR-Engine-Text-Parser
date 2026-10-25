@@ -166,6 +166,8 @@ void runSelfTests() {
 
     std::istringstream trec(
         "<doc><docno>FT911-3546</docno><headline>Cats</headline>"
+        "<title>TitleOnly</title><ti>TiOnly</ti><hl>HlOnly</hl>"
+        "<leadpara>LeadOnly</leadpara>"
         "<text type=\"body\">Running <b>cats</b> &amp; dogs &#65;.</text></doc>"
         "<DOC><DOCNO>FT911-1</DOCNO><TEXT/></DOC>");
 
@@ -182,7 +184,7 @@ void runSelfTests() {
         records.size() == 2 &&
         records[0].name == "FT911-3546" &&
         parser.parseText(records[0].text) ==
-            std::vector<std::string>{"cat", "run", "cat", "dog", "a"} &&
+            std::vector<std::string>{"run", "cat", "dog", "a"} &&
         records[1].text.empty(),
         "TREC records or entity decoding differ.");
 

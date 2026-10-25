@@ -1,6 +1,6 @@
-# IR Engine Text Parser
+# IR Engine Text Parser and Indexer
 
-This C++ project reads documents, cleans their text, and creates word and document dictionaries.
+This C++ project reads documents, cleans their text, and creates word and document dictionaries plus forward and inverted indexes. See `readme.txt` for Project 2 build, indexing, lookup, and test commands.
 
 The parser separates TREC documents, removes numbers and words containing digits, splits text at punctuation, converts words to lowercase, removes stopwords, and applies the supplied stemmer.
 
@@ -16,6 +16,7 @@ The `.cpp` files contain source code. CMake builds them into the executable prog
 | `parser_tests.cpp` | `ParserTests` | Processes the same bundled corpus |
 | `input_main.cpp` | `InputParser` | Opens a graphical chooser for a data file |
 | `application_tests.cpp` | `ApplicationTests` | Opens a graphical chooser for a data file |
+| `index_main.cpp` | `IndexEngine` | Builds indexes and looks up terms |
 
 **Start by running `IREngine` or `ParserTests` with no program arguments.**
 
@@ -53,12 +54,13 @@ Check that these items are included:
 | `parser_tests.cpp` | Starts `ParserTests` |
 | `input_main.cpp` | Starts `InputParser` |
 | `application_tests.cpp` | Starts `ApplicationTests` |
+| `index_main.cpp` | Starts `IndexEngine` |
 | `src/` | Contains the shared parser source and headers |
 | `resources/stoplist.txt` | Contains the stopwords |
 | `resources/corpus/sample.trec` | Provides the bundled sample input |
 | `vendor/stemmer.h` | Contains the supplied stemmer |
 
-The four entry files may be in the project root or `src/`. Keep only one copy of each entry file because CMake checks both locations.
+The five entry files may be in the project root or `src/`. Keep only one copy of each entry file because CMake checks both locations.
 
 If the sample corpus is missing, restore it before running `IREngine` or `ParserTests` normally. The file-chooser programs can process a selected file without the bundled sample.
 
@@ -332,11 +334,11 @@ Run each command after the previous command succeeds:
 
 ```sh
 cmake -S . -B build-xcode -G Xcode
-cmake --build build-xcode --config Debug --target IREngine ParserTests InputParser ApplicationTests
+cmake --build build-xcode --config Debug --target IREngine ParserTests InputParser ApplicationTests IndexEngine
 cmake --open build-xcode
 ```
 
-These commands generate the Xcode project, build all four programs, and open the generated project.
+These commands generate the Xcode project, build all five programs, and open the generated project.
 
 ### Run main.cpp as IREngine
 
@@ -386,6 +388,9 @@ With the working directory set to the project root, normal runs write:
 output/parser_output.txt
 output/text_dictionary.txt
 output/doc_dictionary.txt
+output/forward_index.txt
+output/inverted_index.txt
+output/inverted_offsets.txt
 ```
 
 | File | Contents |
@@ -393,6 +398,9 @@ output/doc_dictionary.txt
 | `text_dictionary.txt` | Final terms and their IDs |
 | `doc_dictionary.txt` | Document names and their IDs |
 | `parser_output.txt` | Both dictionaries and document token streams |
+| `forward_index.txt` | Term frequencies per document |
+| `inverted_index.txt` | Document frequencies per term |
+| `inverted_offsets.txt` | Byte offsets for direct term lookup |
 
 The supplied sample should report:
 
@@ -486,7 +494,7 @@ After an Xcode build:
 
 I select one supported data file and click Open. Canceling leaves existing results unchanged. File selection stays local; the application does not send the data to a website.
 
-Supported inputs are TXT, TREC/SGML, CSV, TSV, JSON, JSONL/NDJSON, and XLSX. Plain TXT is read by paragraph by default.
+Supported inputs are TXT, TREC/SGML, CSV, TSV, JSON, JSONL/NDJSON, and XLSX. Plain TXT is read by paragraph by default. For TREC/SGML, only `<TEXT>` content is parsed; fields such as `<HEADLINE>` and `<TITLE>` are ignored.
 
 With the upload fix applied, unnamed records receive names such as `DOC#1` and IDs in input order. Genuine FT911 names keep their required IDs.
 

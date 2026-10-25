@@ -3,7 +3,6 @@
 #include "OutputWriter.h"
 
 #include <fstream>
-#include <set>
 #include <stdexcept>
 
 namespace ir {
@@ -132,10 +131,6 @@ void TrecReader::read(
         throw std::invalid_argument("Invalid TREC reader settings.");
     }
 
-    const std::set<std::string> contentTags{
-        "TEXT", "HEADLINE", "TITLE", "TI", "HL", "LEADPARA"
-    };
-
     Document document;
     bool insideDocument = false;
     bool insideName = false;
@@ -262,7 +257,7 @@ void TrecReader::read(
 
                 insideName = false;
             }
-        } else if (contentTags.count(tag)) {
+        } else if (tag == "TEXT") {
             if (!insideDocument || insideName) {
                 throw std::runtime_error(
                     "Content field outside its document.");

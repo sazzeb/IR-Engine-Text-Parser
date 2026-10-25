@@ -1,5 +1,6 @@
 #include "ParserApplication.h"
 #include "OutputWriter.h"
+#include "IndexLookup.h"
 
 #include <miniz.h>
 
@@ -194,6 +195,51 @@ void runSelfTests() {
         readFile(outputs.documents) == documents,
         "Standalone dictionary files differ from required identifiers.");
 
+    const std::string forward =
+        "1: 7: 1;\n"
+        "3546: 1: 2; 2: 1; 3: 1; 4: 1; 5: 1; 6: 1;\n";
+    const std::string inverted =
+        "1: 3546: 2;\n"
+        "2: 3546: 1;\n"
+        "3: 3546: 1;\n"
+        "4: 3546: 1;\n"
+        "5: 3546: 1;\n"
+        "6: 3546: 1;\n"
+        "7: 1: 1;\n";
+
+    require(
+        readFile(outputs.forward) == forward &&
+        readFile(outputs.inverted) == inverted,
+        "Forward or inverted frequencies differ.");
+
+    ir::IndexLookup lookup(outputs, options.stopwords);
+    std::ostringstream postings;
+
+    require(
+        lookup.printTerm("CATS", postings) &&
+        postings.str() == "Term: cat (ID 1)\nDocument 3546: 2\n",
+        "A stemmed query did not return its document frequency.");
+
+    postings.str("");
+    postings.clear();
+
+    require(
+        lookup.printTerm("running", postings) &&
+        postings.str() == "Term: run (ID 7)\nDocument 1: 1\n",
+        "A query did not use the same stemming as the corpus.");
+
+    postings.str("");
+    postings.clear();
+
+    require(
+        !lookup.printTerm("the", postings) &&
+        !lookup.printTerm("absent", postings),
+        "An absent or removed term was found in the index.");
+
+    requireFailure(
+        [&] { lookup.printTerm("cats running", postings); },
+        "A multiword query was accepted as one term.");
+
     const auto expected = readFile(outputs.parser);
 
     require(
@@ -207,7 +253,8 @@ void runSelfTests() {
 
     for (int repetition = 1; repetition <= 3; ++repetition) {
         for (const auto& path : {
-            outputs.parser, outputs.terms, outputs.documents
+            outputs.parser, outputs.terms, outputs.documents,
+            outputs.forward, outputs.inverted, outputs.offsets
         }) {
             writeFile(path, std::string(20000, 'x'));
         }
@@ -217,7 +264,9 @@ void runSelfTests() {
         require(
             readFile(outputs.parser) == expected &&
             readFile(outputs.terms) == terms &&
-            readFile(outputs.documents) == documents,
+            readFile(outputs.documents) == documents &&
+            readFile(outputs.forward) == forward &&
+            readFile(outputs.inverted) == inverted,
             "A repeated run appended or retained old data.");
     }
 
@@ -267,7 +316,8 @@ void runSelfTests() {
             "Invalid corpus accepted.");
 
         for (const auto& path : {
-            outputs.parser, outputs.terms, outputs.documents
+            outputs.parser, outputs.terms, outputs.documents,
+            outputs.forward, outputs.inverted, outputs.offsets
         }) {
             require(
                 readFile(path).empty(),
@@ -337,6 +387,31 @@ void runSelfTests() {
         readFile(outputs.documents) == "FT911-1\t1\nA\t2\nB\t3\n",
         "Mixed document names caused identifier clashes.");
 
+    options.input = temporary.path / "postings.trec";
+    writeFile(
+        options.input,
+        "<DOC><DOCNO>A</DOCNO><TEXT>cat cat moon</TEXT></DOC>"
+        "<DOC><DOCNO>B</DOCNO><TEXT>cat</TEXT></DOC>"
+        "<DOC><DOCNO>C</DOCNO><TEXT>the and</TEXT></DOC>");
+    ir::runParser(options, log);
+
+    require(
+        readFile(outputs.forward) ==
+            "1: 1: 2; 2: 1;\n2: 1: 1;\n3:\n" &&
+        readFile(outputs.inverted) ==
+            "1: 1: 2; 2: 1;\n2: 1: 1;\n",
+        "Shared terms or an empty document changed index postings.");
+
+    ir::IndexLookup sharedLookup(outputs, options.stopwords);
+    postings.str("");
+    postings.clear();
+
+    require(
+        sharedLookup.printTerm("cats", postings) &&
+        postings.str() ==
+            "Term: cat (ID 1)\nDocument 1: 2\nDocument 2: 1\n",
+        "Lookup omitted a document from a posting list.");
+
     // Clear staged failures without publishing any incomplete dictionary or token file.
     requireFailure(
         [&] {
@@ -352,7 +427,8 @@ void runSelfTests() {
         "A failed writer was reported as successful.");
 
     for (const auto& path : {
-        outputs.parser, outputs.terms, outputs.documents
+        outputs.parser, outputs.terms, outputs.documents,
+        outputs.forward, outputs.inverted, outputs.offsets
     }) {
         require(
             readFile(path).empty(),

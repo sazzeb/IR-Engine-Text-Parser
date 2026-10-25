@@ -14,6 +14,9 @@ namespace ir {
         std::filesystem::path parser;
         std::filesystem::path terms;
         std::filesystem::path documents;
+        std::filesystem::path forward;
+        std::filesystem::path inverted;
+        std::filesystem::path offsets;
     };
 
     // Validate application paths without converting them into machine specific locations.
@@ -25,7 +28,7 @@ namespace ir {
         using Producer = std::function<
             void(const OutputPaths&, const std::filesystem::path&)>;
 
-        // Build the three required filenames beside the chosen parser output.
+        // Build the result filenames beside the chosen parser output.
         static OutputPaths paths(const std::filesystem::path& parserOutput);
 
         // Clear previous results and publish new files only after production succeeds.

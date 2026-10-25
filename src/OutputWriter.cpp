@@ -64,7 +64,7 @@ void clearFile(const std::filesystem::path& path) {
 
 }
 
-// Place both dictionaries beside the required parser output without absolute paths.
+// Place dictionaries and indexes beside the required parser output.
 OutputPaths OutputWriter::paths(
     const std::filesystem::path& parserOutput) {
     const auto parser = requireRelativePath(parserOutput);
@@ -77,7 +77,10 @@ OutputPaths OutputWriter::paths(
     return {
         parser,
         parser.parent_path() / "text_dictionary.txt",
-        parser.parent_path() / "doc_dictionary.txt"
+        parser.parent_path() / "doc_dictionary.txt",
+        parser.parent_path() / "forward_index.txt",
+        parser.parent_path() / "inverted_index.txt",
+        parser.parent_path() / "inverted_offsets.txt"
     };
 }
 
@@ -94,8 +97,9 @@ void OutputWriter::publish(
 
     fs::create_directories(parent);
 
-    const std::array<fs::path, 3> destinations{
-        output.parser, output.terms, output.documents
+    const std::array<fs::path, 6> destinations{
+        output.parser, output.terms, output.documents,
+        output.forward, output.inverted, output.offsets
     };
 
     for (std::size_t index = 0; index < destinations.size(); ++index) {
@@ -120,8 +124,9 @@ void OutputWriter::publish(
     OutputWorkspace workspace(parent);
     const auto staged = paths(workspace.path / "parser_output.txt");
 
-    const std::array<fs::path, 3> pending{
-        staged.parser, staged.terms, staged.documents
+    const std::array<fs::path, 6> pending{
+        staged.parser, staged.terms, staged.documents,
+        staged.forward, staged.inverted, staged.offsets
     };
 
     try {
