@@ -271,37 +271,18 @@ std::optional<std::vector<std::filesystem::path>> chooseRelativeInput(bool index
     }
 #endif
 
-    const auto selection = indexer ? pfd::message(
-        "Select corpus input",
-        "Choose Yes for a folder, No for files, or Cancel to keep existing results.",
-        pfd::choice::yes_no_cancel,
-        pfd::icon::question).result() : pfd::button::no;
-
-    if (selection != pfd::button::yes &&
-        selection != pfd::button::no) {
-        return std::nullopt;
-    }
-
-    const bool selectFolder = selection == pfd::button::yes;
+    bool selectFolder = false;
     std::vector<std::filesystem::path> selectedPaths;
 
-    if (selectFolder) {
-        const auto selected = pfd::select_folder(
-            "Select a corpus folder").result();
-
-        if (selected.empty()) {
-            return std::nullopt;
-        }
-
-        selectedPaths.push_back(std::filesystem::u8path(selected));
-    } else {
 #ifdef _WIN32
         std::vector<wchar_t> filename(65536, L'\0');
 
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
         dialog.hwndOwner = GetActiveWindow();
-        dialog.lpstrTitle = L"Select a corpus file";
+        dialog.lpstrTitle = indexer
+            ? L"Select one or more corpus files"
+            : L"Select one corpus file";
         dialog.lpstrFilter =
             L"Corpus files\0"
             L"*.txt;*.trec;*.sgm;*.sgml;*.csv;*.tsv;*.json;*.jsonl;*.ndjson;*.xlsx\0"
@@ -325,22 +306,21 @@ std::optional<std::vector<std::filesystem::path>> chooseRelativeInput(bool index
                     std::to_string(error));
             }
 
-            return std::nullopt;
-        }
-
-        const std::filesystem::path first(filename.data());
-        const wchar_t* next = filename.data() + first.native().size() + 1;
-        if (indexer && *next != L'\0') {
-            while (*next != L'\0') {
-                selectedPaths.push_back(first / next);
-                next += std::wcslen(next) + 1;
-            }
         } else {
-            selectedPaths.push_back(first);
+            const std::filesystem::path first(filename.data());
+            const wchar_t* next = filename.data() + first.native().size() + 1;
+            if (indexer && *next != L'\0') {
+                while (*next != L'\0') {
+                    selectedPaths.push_back(first / next);
+                    next += std::wcslen(next) + 1;
+                }
+            } else {
+                selectedPaths.push_back(first);
+            }
         }
 #else
         pfd::open_file chooser(
-            "Select a corpus file",
+            indexer ? "Select one or more corpus files" : "Select one corpus file",
             "",
             {
                 "Corpus files",
@@ -351,18 +331,34 @@ std::optional<std::vector<std::filesystem::path>> chooseRelativeInput(bool index
 
         const auto selected = chooser.result();
 
-        if (selected.empty()) {
-            return std::nullopt;
-        }
-
         if (!indexer && selected.size() != 1) {
-            throw std::runtime_error("Select exactly one corpus file.");
+            if (!selected.empty()) {
+                throw std::runtime_error("Select exactly one corpus file.");
+            }
         }
 
         for (const auto& path : selected) {
             selectedPaths.push_back(std::filesystem::u8path(path));
         }
 #endif
+
+    if (selectedPaths.empty()) {
+        if (!indexer || pfd::message(
+                "Select a corpus folder?",
+                "No files selected. Choose Yes to select a whole folder, or No to cancel.",
+                pfd::choice::yes_no,
+                pfd::icon::question).result() != pfd::button::yes) {
+            return std::nullopt;
+        }
+
+        const auto selected = pfd::select_folder(
+            "Select a corpus folder").result();
+        if (selected.empty()) {
+            return std::nullopt;
+        }
+
+        selectFolder = true;
+        selectedPaths.push_back(std::filesystem::u8path(selected));
     }
 
     // Desktop APIs return full locations, so convert them before opening files.
@@ -769,7 +765,7 @@ int runInteractiveApplication(int argc, char* argv[], bool indexer) {
             if (option == "--help") {
                 std::cout
                     << (indexer
-                        ? "Select files or a folder for Phase 2 indexing and lookup.\n"
+                        ? "Select one or more files; cancel the file chooser to select a folder instead.\n"
                         : "Select one file for text parsing only.\n")
                     << "--trace | --progress\n"
                     << (indexer ? "--recursive\n--term WORD\n" : "")
