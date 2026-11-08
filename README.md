@@ -14,9 +14,10 @@ The `.cpp` files contain source code. CMake builds them into the executable prog
 |---|---|---|
 | `main.cpp` | `IREngine` | Processes documents in `resources/corpus` |
 | `parser_tests.cpp` | `ParserTests` | Processes the same bundled corpus |
-| `input_main.cpp` | `InputParser` | Opens a graphical chooser for a data file |
+| `input_main.cpp` | `InputParser` | Selects one file and runs the text parser only |
 | `application_tests.cpp` | `ApplicationTests` | Opens a graphical chooser for a data file |
 | `index_main.cpp` | `IndexEngine` | Indexes `resources/ft911` and looks up terms |
+| `index_upload_main.cpp` | `IndexUploader` | Selects files or a folder, then indexes and looks up terms |
 
 **Start by running `IREngine` or `ParserTests` with no program arguments.**
 
@@ -55,12 +56,13 @@ Check that these items are included:
 | `input_main.cpp` | Starts `InputParser` |
 | `application_tests.cpp` | Starts `ApplicationTests` |
 | `index_main.cpp` | Starts `IndexEngine` |
+| `index_upload_main.cpp` | Starts `IndexUploader` |
 | `src/` | Contains the shared parser source and headers |
 | `resources/stoplist.txt` | Contains the stopwords |
 | `resources/corpus/sample.trec` | Provides the bundled sample input |
 | `vendor/stemmer.h` | Contains the supplied stemmer |
 
-The five entry files may be in the project root or `src/`. Keep only one copy of each entry file because CMake checks both locations.
+The entry files may be in the project root or `src/`. Keep only one copy of each entry file because CMake checks both locations.
 
 If the sample corpus is missing, restore it before running `IREngine` or `ParserTests` normally. The file-chooser programs can process a selected file without the bundled sample.
 
@@ -334,11 +336,11 @@ Run each command after the previous command succeeds:
 
 ```sh
 cmake -S . -B build-xcode -G Xcode
-cmake --build build-xcode --config Debug --target IREngine ParserTests InputParser ApplicationTests IndexEngine
+cmake --build build-xcode --config Debug --target IREngine ParserTests InputParser ApplicationTests IndexEngine IndexUploader
 cmake --open build-xcode
 ```
 
-These commands generate the Xcode project, build all five programs, and open the generated project.
+These commands generate the Xcode project, build the programs, and open the generated project.
 
 ### Run main.cpp as IREngine
 
@@ -382,7 +384,7 @@ For automated parser checks:
 
 ## 6. Check the results
 
-With the working directory set to the project root, normal runs write:
+With the working directory set to the project root, indexing runs write:
 
 ```text
 output/parser_output.txt
@@ -409,6 +411,8 @@ The supplied sample should report:
 ```
 
 This count applies to the bundled sample. Other input produces different counts.
+
+`InputParser` writes only `parser_output.txt` and the two dictionaries; it does not create indexes.
 
 Term IDs start at 1 and follow alphabetical order. Genuine FT911 document IDs match their numeric suffixes.
 
@@ -463,9 +467,9 @@ Automated tests use temporary data and do not open a chooser or replace normal p
 | CTest cannot find an executable | Build both test programs first. |
 | CLion warns that an output file is large | This concerns editor features; check the program’s exit status separately. |
 
-## 9. Additional functionality I added
+## 9. Select local input
 
-I added `InputParser` and `ApplicationTests` to test the parser with other local datasets. Both open a graphical chooser, so I select the input file without entering its path in the console.
+`InputParser` selects one file and runs only the text parser. `IndexUploader` selects one or more files or a folder, builds indexes, and prompts for lookup terms. `ApplicationTests` opens the single-file chooser unless run with `--self-test`.
 
 To run them, select the matching target in CLion or scheme in Xcode, use the project-root working directory, and leave arguments empty.
 
@@ -475,24 +479,24 @@ Windows:
 
 ```powershell
 .\build-vscode\InputParser.exe
-.\build-vscode\ApplicationTests.exe
+.\build-vscode\IndexUploader.exe
 ```
 
 macOS or Linux:
 
 ```sh
 ./build-vscode/InputParser
-./build-vscode/ApplicationTests
+./build-vscode/IndexUploader
 ```
 
 After an Xcode build:
 
 ```sh
 ./build-xcode/Debug/InputParser
-./build-xcode/Debug/ApplicationTests
+./build-xcode/Debug/IndexUploader
 ```
 
-I select one supported data file and click Open. Canceling leaves existing results unchanged. File selection stays local; the application does not send the data to a website.
+For `IndexUploader`, select one or more files and click Open. To select a folder instead, cancel the file chooser, then click Yes. `InputParser` accepts only one file. Selection stays local; no data is sent to a website.
 
 Supported inputs are TXT, TREC/SGML, CSV, TSV, JSON, JSONL/NDJSON, and XLSX. Plain TXT is read by paragraph by default. For TREC/SGML, only `<TEXT>` content is parsed; fields such as `<HEADLINE>` and `<TITLE>` are ignored.
 
